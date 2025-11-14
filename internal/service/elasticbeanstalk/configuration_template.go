@@ -138,9 +138,7 @@ func resourceConfigurationTemplateUpdate(ctx context.Context, d *schema.Resource
 			TemplateName:    aws.String(d.Id()),
 		}
 
-		_, err := conn.UpdateConfigurationTemplate(ctx, input)
-
-		if err != nil {
+		if _, err := conn.UpdateConfigurationTemplate(ctx, input); err != nil {
 			return sdkdiag.AppendErrorf(diags, "updating Elastic Beanstalk Configuration Template (%s): %s", d.Id(), err)
 		}
 	}
@@ -148,42 +146,66 @@ func resourceConfigurationTemplateUpdate(ctx context.Context, d *schema.Resource
 	if d.HasChange("setting") {
 		o, n := d.GetChange("setting")
 		os, ns := o.(*schema.Set), n.(*schema.Set)
-		add, del := expandConfigurationOptionSettings(ns.Difference(os).List()), expandConfigurationOptionSettings(os.Difference(ns).List())
 
-		// Additions and removals of options are done in a single API call, so we
-		// can't do our normal "remove these" and then later "add these", re-adding
-		// any updated settings.
-		// Because of this, we need to remove any settings in the "removable"
-		// settings that are also found in the "add" settings, otherwise they
-		// conflict. Here we loop through all the initial removables from the set
-		// difference, and we build up a slice of settings not found in the "add"
-		// set
-		var remove []awstypes.ConfigurationOptionSetting
-		for _, r := range del {
-			for _, a := range add {
-				if aws.ToString(r.Namespace) == aws.ToString(a.Namespace) && aws.ToString(r.OptionName) == aws.ToString(a.OptionName) {
-					continue
+		add := expandConfigurationOptionSettings(ns.Difference(os).List())
+		del := expandConfigurationOptionSettings(os.Difference(ns).List())
+
+		defaultResourceName := func(ns *string) *string {
+			switch aws.ToString(ns) {
+			case "aws:autoscaling:asg":
+				return aws.String("AWSEBAutoScalingGroup")
+			case "aws:autoscaling:launchconfiguration":
+				return aws.String("AWSEBAutoScalingLaunchConfiguration")
+			default:
+				return nil
+			}
+		}
+		ensureResourceName := func(s *awstypes.ConfigurationOptionSetting) {
+			if s.ResourceName == nil || aws.ToString(s.ResourceName) == "" {
+				if rn := defaultResourceName(s.Namespace); rn != nil {
+					s.ResourceName = rn
 				}
-				remove = append(remove, r)
 			}
 		}
 
+		for i := range add {
+			ensureResourceName(&add[i])
+		}
+		for i := range del {
+			ensureResourceName(&del[i])
+		}
+
+		key := func(ns, on, rn *string) string {
+			return aws.ToString(ns) + "|" + aws.ToString(on) + "|" + aws.ToString(rn)
+		}
+
+		addKeys := make(map[string]struct{}, len(add))
+		for _, a := range add {
+			addKeys[key(a.Namespace, a.OptionName, a.ResourceName)] = struct{}{}
+		}
+
+		// Only remove options that aren't also being added/updated
+		var remove []awstypes.ConfigurationOptionSetting
+		for _, r := range del {
+			if _, exists := addKeys[key(r.Namespace, r.OptionName, r.ResourceName)]; !exists {
+				remove = append(remove, r)
+			}
+		}
 		input := &elasticbeanstalk.UpdateConfigurationTemplateInput{
 			ApplicationName: aws.String(d.Get("application").(string)),
-			OptionSettings:  add,
 			TemplateName:    aws.String(d.Id()),
+			OptionSettings:  add,
 		}
 
 		for _, v := range remove {
 			input.OptionsToRemove = append(input.OptionsToRemove, awstypes.OptionSpecification{
-				Namespace:  v.Namespace,
-				OptionName: v.OptionName,
+				Namespace:    v.Namespace,
+				OptionName:   v.OptionName,
+				ResourceName: v.ResourceName,
 			})
 		}
 
-		_, err := conn.UpdateConfigurationTemplate(ctx, input)
-
-		if err != nil {
+		if _, err := conn.UpdateConfigurationTemplate(ctx, input); err != nil {
 			return sdkdiag.AppendErrorf(diags, "updating Elastic Beanstalk Configuration Template (%s): %s", d.Id(), err)
 		}
 	}
