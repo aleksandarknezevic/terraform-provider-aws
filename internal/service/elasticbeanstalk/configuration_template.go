@@ -193,17 +193,17 @@ func resourceConfigurationTemplateUpdate(ctx context.Context, d *schema.Resource
 			addKeys[key(a.Namespace, a.OptionName, a.ResourceName)] = struct{}{}
 		}
 
-		// Only remove options that aren't also being added/updated
 		var remove []awstypes.ConfigurationOptionSetting
 		for _, r := range del {
 			if _, exists := addKeys[key(r.Namespace, r.OptionName, r.ResourceName)]; !exists {
 				remove = append(remove, r)
 			}
 		}
+
 		input := &elasticbeanstalk.UpdateConfigurationTemplateInput{
 			ApplicationName: aws.String(d.Get("application").(string)),
-			TemplateName:    aws.String(d.Id()),
 			OptionSettings:  add,
+			TemplateName:    aws.String(d.Id()),
 		}
 
 		for _, v := range remove {
