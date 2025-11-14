@@ -138,7 +138,9 @@ func resourceConfigurationTemplateUpdate(ctx context.Context, d *schema.Resource
 			TemplateName:    aws.String(d.Id()),
 		}
 
-		if _, err := conn.UpdateConfigurationTemplate(ctx, input); err != nil {
+		_, err := conn.UpdateConfigurationTemplate(ctx, input)
+
+		if err != nil {
 			return sdkdiag.AppendErrorf(diags, "updating Elastic Beanstalk Configuration Template (%s): %s", d.Id(), err)
 		}
 	}
@@ -147,8 +149,16 @@ func resourceConfigurationTemplateUpdate(ctx context.Context, d *schema.Resource
 		o, n := d.GetChange("setting")
 		os, ns := o.(*schema.Set), n.(*schema.Set)
 
-		add := expandConfigurationOptionSettings(ns.Difference(os).List())
-		del := expandConfigurationOptionSettings(os.Difference(ns).List())
+		add, del := expandConfigurationOptionSettings(ns.Difference(os).List()), expandConfigurationOptionSettings(os.Difference(ns).List())
+
+		// Additions and removals of options are done in a single API call, so we
+		// can't do our normal "remove these" and then later "add these", re-adding
+		// any updated settings.
+		// Because of this, we need to remove any settings in the "removable"
+		// settings that are also found in the "add" settings, otherwise they
+		// conflict. Here we loop through all the initial removables from the set
+		// difference, and we build up a slice of settings not found in the "add"
+		// set
 
 		defaultResourceName := func(ns *string) *string {
 			switch aws.ToString(ns) {
