@@ -214,7 +214,9 @@ func resourceConfigurationTemplateUpdate(ctx context.Context, d *schema.Resource
 			})
 		}
 
-		if _, err := conn.UpdateConfigurationTemplate(ctx, input); err != nil {
+		_, err := conn.UpdateConfigurationTemplate(ctx, input)
+
+		if err != nil {
 			return sdkdiag.AppendErrorf(diags, "updating Elastic Beanstalk Configuration Template (%s): %s", d.Id(), err)
 		}
 	}
