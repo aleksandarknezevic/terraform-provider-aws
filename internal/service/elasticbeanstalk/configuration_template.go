@@ -148,7 +148,6 @@ func resourceConfigurationTemplateUpdate(ctx context.Context, d *schema.Resource
 	if d.HasChange("setting") {
 		o, n := d.GetChange("setting")
 		os, ns := o.(*schema.Set), n.(*schema.Set)
-
 		add, del := expandConfigurationOptionSettings(ns.Difference(os).List()), expandConfigurationOptionSettings(os.Difference(ns).List())
 
 		// Additions and removals of options are done in a single API call, so we
